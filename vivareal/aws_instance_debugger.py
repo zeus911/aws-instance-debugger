@@ -211,9 +211,8 @@ class Debugger(object):
         try:
             slices = int(ceil(len(metric_data) / 20.0))
             for metric_data_slice in [metric_data[i::slices] for i in range(slices)]:
-                # response = cloudwatch.put_metric_data(Namespace='Search/EC2', MetricData=metric_data_slice)
-                print(metric_data_slice)
-                # print 'Sending statistics, response: %i' % response['ResponseMetadata']['HTTPStatusCode']
+                response = self.cloudwatch.put_metric_data(Namespace='Search/EC2', MetricData=metric_data_slice)
+                print('Sending statistics, response: %i' % response['ResponseMetadata']['HTTPStatusCode'])
             self.first_run = False
         except Exception as e:
             print('ERROR SENDING STATISTICS! :( %s' % e.message)
