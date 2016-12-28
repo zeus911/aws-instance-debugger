@@ -108,17 +108,23 @@ class Debugger(object):
                 ping = pyping.ping(solr, count=5, timeout=500, udp=self.use_udp)
                 if host_key not in hosts:
                     hosts[host_key] = {'avg': 0, 'min': 1000, 'max': 0}
-                hosts[host_key]['avg'] = float(ping.avg_rtt) if float(ping.avg_rtt) > hosts[host_key]['avg'] else hosts[host_key]['avg']
-                hosts[host_key]['max'] = float(ping.max_rtt) if float(ping.max_rtt) > hosts[host_key]['max'] else hosts[host_key]['max']
-                hosts[host_key]['min'] = float(ping.min_rtt) if float(ping.min_rtt) < hosts[host_key]['min'] else hosts[host_key]['min']
+                if ping.avg_rtt:
+                    hosts[host_key]['avg'] = float(ping.avg_rtt) if float(ping.avg_rtt) > hosts[host_key]['avg'] else hosts[host_key]['avg']
+                if ping.max_rtt:
+                    hosts[host_key]['max'] = float(ping.max_rtt) if float(ping.max_rtt) > hosts[host_key]['max'] else hosts[host_key]['max']
+                if ping.min_rtt:
+                    hosts[host_key]['min'] = float(ping.min_rtt) if float(ping.min_rtt) < hosts[host_key]['min'] else hosts[host_key]['min']
             for zoo in self.zookeepers:
                 host_key = 'ZKPing_%s' % zoo
                 ping = pyping.ping(zoo, count=3, timeout=500, udp=self.use_udp)
                 if host_key not in hosts:
                     hosts[host_key] = {'avg': 0, 'min': 1000, 'max': 0}
-                hosts[host_key]['avg'] = float(ping.avg_rtt) if float(ping.avg_rtt) > hosts[host_key]['avg'] else hosts[host_key]['avg']
-                hosts[host_key]['max'] = float(ping.max_rtt) if float(ping.max_rtt) > hosts[host_key]['max'] else hosts[host_key]['max']
-                hosts[host_key]['min'] = float(ping.min_rtt) if float(ping.min_rtt) < hosts[host_key]['min'] else hosts[host_key]['min']
+                if ping.avg_rtt:
+                    hosts[host_key]['avg'] = float(ping.avg_rtt) if float(ping.avg_rtt) > hosts[host_key]['avg'] else hosts[host_key]['avg']
+                if ping.max_rtt:
+                    hosts[host_key]['max'] = float(ping.max_rtt) if float(ping.max_rtt) > hosts[host_key]['max'] else hosts[host_key]['max']
+                if ping.min_rtt:
+                    hosts[host_key]['min'] = float(ping.min_rtt) if float(ping.min_rtt) < hosts[host_key]['min'] else hosts[host_key]['min']
 
             print('.', end="")
 
