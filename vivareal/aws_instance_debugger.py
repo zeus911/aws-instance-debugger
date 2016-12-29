@@ -48,10 +48,12 @@ class Debugger(object):
                     statuses = urllib2.urlopen('http://%s:8983/solr/admin/collections?action=CLUSTERSTATUS&wt=json' % cmdline_host, timeout=1)
                     for status in json.loads(statuses.read())['cluster'].get('live_nodes', []):
                         expanded_hosts.append(status.split(':')[0])
+                except urllib2.URLError:
+                    print('Unable to connect to SolrCloud at %s:8983: %s' % e.message)
+                    return []
                 except Exception as e:
                     print('Unable to connect to SolrCloud at %s:8983!' % cmdline_host)
                     raise e
-                    # print(e)
             expanded_hosts.sort()
         if expanded_hosts:
             print('Expanding SolrCloud DNSs from %s to ip list %s' % (', '.join(cmdline_hosts), ', '.join(expanded_hosts)))
@@ -73,6 +75,9 @@ class Debugger(object):
                     statuses = urllib2.urlopen('http://%s:8080/exhibitor/v1/cluster/status' % cmdline_host, timeout=1)
                     for status in json.loads(statuses.read()):
                         expanded_hosts.append(status.get('hostname'))
+                except urllib2.URLError:
+                    print('Unable to connect to Exhibitoe at %s:8080: %s' % e.message)
+                    return []
                 except Exception as e:
                     print('Unable to connect to Exhibitor at %s:8080!' % cmdline_host)
                     print(e)
