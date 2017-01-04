@@ -115,26 +115,24 @@ class Debugger(object):
                 host_key = 'SolrPing_%s' % solr
                 ping = pyping.ping(solr, count=5, timeout=500, udp=self.use_udp)
                 if host_key not in hosts:
-                    hosts[host_key] = {'count': 0, 'avg': 0, 'min': 1000, 'max': 0}
+                    hosts[host_key] = {'avg': 0, 'min': 1000, 'max': 0}
                 if ping.avg_rtt:
                     hosts[host_key]['avg'] = float(ping.avg_rtt) if float(ping.avg_rtt) > hosts[host_key]['avg'] else hosts[host_key]['avg']
                 if ping.max_rtt:
                     hosts[host_key]['max'] = float(ping.max_rtt) if float(ping.max_rtt) > hosts[host_key]['max'] else hosts[host_key]['max']
                 if ping.min_rtt:
                     hosts[host_key]['min'] = float(ping.min_rtt) if float(ping.min_rtt) < hosts[host_key]['min'] else hosts[host_key]['min']
-                hosts[host_key]['count'] += 1
             for zoo in self.zookeepers:
                 host_key = 'ZKPing_%s' % zoo
                 ping = pyping.ping(zoo, count=5, timeout=500, udp=self.use_udp)
                 if host_key not in hosts:
-                    hosts[host_key] = {'count': 0, 'avg': 0, 'min': 1000, 'max': 0}
+                    hosts[host_key] = {'avg': 0, 'min': 1000, 'max': 0}
                 if ping.avg_rtt:
                     hosts[host_key]['avg'] = float(ping.avg_rtt) if float(ping.avg_rtt) > hosts[host_key]['avg'] else hosts[host_key]['avg']
                 if ping.max_rtt:
                     hosts[host_key]['max'] = float(ping.max_rtt) if float(ping.max_rtt) > hosts[host_key]['max'] else hosts[host_key]['max']
                 if ping.min_rtt:
                     hosts[host_key]['min'] = float(ping.min_rtt) if float(ping.min_rtt) < hosts[host_key]['min'] else hosts[host_key]['min']
-                hosts[host_key]['count'] += 1
             print('.', end="")
             sys.stdout.flush()
 
@@ -145,10 +143,7 @@ class Debugger(object):
         print()
 
         for ping_host, ping_data in hosts.iteritems():
-            if ping_data['min'] == ping_data['max']:
-                metric_data.append(self.metric(ping_host, value=ping_data['avg']))
-            else:
-                metric_data.append(self.metric(ping_host, value=ping_data['avg'], min=ping_data['min'], max=ping_data['max'], count=ping_data['count']))
+            metric_data.append(self.metric(ping_host, value=ping_data['avg'], min=ping_data['min'], max=ping_data['max']))
 
         metric_data.append(self.metric('Load', os.getloadavg()[0]))
         metric_data.append(self.metric('Memory', psutil.virtual_memory().percent))
@@ -156,7 +151,7 @@ class Debugger(object):
 
         return metric_data
 
-    def metric(self, name, value, min=None, max=None, count=1):
+    def metric(self, name, value, min=None, max=None):
         data = {
             'MetricName': name,
             'Dimensions': [
@@ -180,7 +175,7 @@ class Debugger(object):
             statistic_values['Maximum'] = float(max)
 
         if statistic_values and min is not None and max is not None and max > min:
-            statistic_values['SampleCount'] = count
+            statistic_values['SampleCount'] = 1
             statistic_values['Sum'] = float(value)
             data['StatisticValues'] = statistic_values
             del data['Value']
