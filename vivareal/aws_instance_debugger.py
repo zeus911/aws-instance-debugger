@@ -49,7 +49,7 @@ class Debugger(object):
                     for status in json.loads(statuses.read())['cluster'].get('live_nodes', []):
                         expanded_hosts.append(status.split(':')[0])
                 except urllib2.URLError as e:
-                    print('Unable to connect to SolrCloud at %s:8983: %s' % e.message)
+                    print('Unable to connect to SolrCloud at %s:8983: %s' % (cmdline_host, e.message))
                     return []
                 except Exception as e:
                     print('Unable to connect to SolrCloud at %s:8983!' % cmdline_host)
