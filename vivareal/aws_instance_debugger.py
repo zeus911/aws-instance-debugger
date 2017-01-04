@@ -6,6 +6,7 @@ import json
 import os
 import re
 import sys
+import traceback
 import urllib2
 from datetime import datetime
 from math import ceil
@@ -121,19 +122,19 @@ class Debugger(object):
                     hosts[host_key]['max'] = float(ping.max_rtt) if float(ping.max_rtt) > hosts[host_key]['max'] else hosts[host_key]['max']
                 if ping.min_rtt:
                     hosts[host_key]['min'] = float(ping.min_rtt) if float(ping.min_rtt) < hosts[host_key]['min'] else hosts[host_key]['min']
-                hosts[host_key] += 1
+                hosts[host_key]['count'] += 1
             for zoo in self.zookeepers:
                 host_key = 'ZKPing_%s' % zoo
                 ping = pyping.ping(zoo, count=5, timeout=500, udp=self.use_udp)
                 if host_key not in hosts:
-                    hosts[host_key] = {'avg': 0, 'min': 1000, 'max': 0}
+                    hosts[host_key] = {'count': 0, 'avg': 0, 'min': 1000, 'max': 0}
                 if ping.avg_rtt:
                     hosts[host_key]['avg'] = float(ping.avg_rtt) if float(ping.avg_rtt) > hosts[host_key]['avg'] else hosts[host_key]['avg']
                 if ping.max_rtt:
                     hosts[host_key]['max'] = float(ping.max_rtt) if float(ping.max_rtt) > hosts[host_key]['max'] else hosts[host_key]['max']
                 if ping.min_rtt:
                     hosts[host_key]['min'] = float(ping.min_rtt) if float(ping.min_rtt) < hosts[host_key]['min'] else hosts[host_key]['min']
-                hosts[host_key] += 1
+                hosts[host_key]['count'] += 1
             print('.', end="")
             sys.stdout.flush()
 
@@ -259,4 +260,5 @@ if __name__ == '__main__':
             sys.exit(0)
         except Exception as e:
             print('Error: %s' % e.message)
+            traceback.print_exc(file=sys.stdout)
         sys.stdout.flush()
