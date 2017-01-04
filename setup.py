@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='aws-instance-debugger',
-    version='0.4.2',
+    version='0.5.0',
     description='CLI to debug AWS instances',
     packages=find_packages(),
     license='MIT',

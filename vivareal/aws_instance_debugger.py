@@ -20,9 +20,12 @@ pyping.core.MAX_SLEEP = 0
 
 
 class Debugger(object):
-    def __init__(self, solr_hosts, zookeeper_hosts, use_udp=False):
+    def __init__(self, solr_hosts, zookeeper_hosts, use_udp=False, extra_dimensions=[], dry_run=False):
         self.__solr_hosts = solr_hosts
         self.__zookeeper_hosts = zookeeper_hosts
+        self.__dimensions = []
+
+        self.dry_run = dry_run
 
         self.solrs = []
         self.zookeepers = []
@@ -30,9 +33,15 @@ class Debugger(object):
         self.cloudwatch = boto3.client('cloudwatch', region_name='sa-east-1')
         self.identity = self._identity()
         self.use_udp = use_udp
+        self.extra_dimensions = self.parse_extra_dimensions(extra_dimensions)
         self.first_run = True
         self.runs = 0
-        self.update_hosts()
+
+    @staticmethod
+    def parse_extra_dimensions(extra_dimensions):
+        if not extra_dimensions:
+            return {}
+        return dict((k.strip(), v.strip()) for k, v in (dimension.split('=') for dimension in extra_dimensions))
 
     @staticmethod
     def _expand_solr_hosts(cmdline_hosts, myself):
@@ -100,6 +109,25 @@ class Debugger(object):
             print('ERROR RETRIEVING INSTANCE META DATA!!!!!!!!!!!!!!!!!! %s' % e.message)
             return 'localhost', '127.0.0.1'
 
+    def _dimensions(self):
+        if not self.__dimensions:
+            self.__dimensions = [
+                {
+                    'Name': 'InstanceId',
+                    'Value': self.identity[0]
+                },
+                {
+                    'Name': 'PrivateIp',
+                    'Value': self.identity[1]
+                },
+            ]
+            for key, value in self.extra_dimensions.iteritems():
+                self.__dimensions.append({
+                    'Name': key,
+                    'Value': value
+                })
+        return self.__dimensions
+
     def update_hosts(self):
         self.solrs = self._expand_solr_hosts(self.__solr_hosts, self.identity[1])
         self.zookeepers = self._expand_zookeeper_hosts(self.__zookeeper_hosts)
@@ -151,19 +179,12 @@ class Debugger(object):
 
         return metric_data
 
-    def metric(self, name, value, min=None, max=None):
+    def metric(self, name, value, min=None, max=None, extra_dimensions=[]):
+        dimensions = list(extra_dimensions)
+        dimensions.extend(list(self._dimensions()))
         data = {
             'MetricName': name,
-            'Dimensions': [
-                {
-                    'Name': 'InstanceId',
-                    'Value': self.identity[0]
-                },
-                {
-                    'Name': 'PrivateIp',
-                    'Value': self.identity[1]
-                },
-            ],
+            'Dimensions': dimensions,
             'Timestamp': datetime.utcnow(),
             'Value': float(value),
         }
@@ -185,33 +206,44 @@ class Debugger(object):
     def probe(self):
         start = time()
 
-        if self.runs % 3:
+        if self.runs % 5 == 0:
             self.update_hosts()
         self.runs += 1
 
         metric_data = list()
 
         for partition in psutil.disk_partitions():
-            metric_data.append(self.metric('Disk %s' % partition.device, psutil.disk_usage(partition.mountpoint).percent))
+            metric_data.append(self.metric('Disk Usage', psutil.disk_usage(partition.mountpoint).percent, extra_dimensions=[{'Name': 'Partition', 'Value': partition.device}]))
 
         process_count = 0
-        process_thread_count = dict()
+        processes = dict()
         for process in psutil.process_iter():
             process_count += 1
             with process.oneshot():
                 if process.ppid() <= 5:
                     continue
-                process_name = process.name().replace(' ', '').replace('.', '_')
+                process_name = process.name()
                 try:
-                    if process_name not in process_thread_count:
-                        process_thread_count[process_name] = process.num_threads()
-                    else:
-                        process_thread_count[process_name] += process.num_threads()
+                    if process_name not in processes:
+                        processes[process_name] = {
+                            'max_open_files': 0,
+                            'open_files': 0,
+                            'thread_count': 0
+                        }
+                    processes[process_name]['open_files'] += process.num_fds()
+                    processes[process_name]['thread_count'] += process.num_threads()
+                    try:
+                        processes[process_name]['max_open_files'] += process.rlimit(psutil.RLIMIT_NOFILE)[1]
+                    except AttributeError:
+                        pass  # mac os x :(
                 except psutil.AccessDenied as e:
-                    print('Access denied listing threads for %s (pid %i)' % (process_name, process.pid))
-        for process_name, thread_count in process_thread_count.iteritems():
-            metric_data.append(self.metric('%s threads' % process_name, thread_count))
-        metric_data.append(self.metric('Pids', process_count))
+                    print('Access denied listing threads for %s (pid %i): %s' % (process_name, process.pid, e.message))
+        for process_name, data in processes.iteritems():
+            extra_dimensions = [{'Name': 'Process', 'Value': process_name}]
+            metric_data.append(self.metric('Max Open Files', data['max_open_files'], extra_dimensions=extra_dimensions))
+            metric_data.append(self.metric('Open Files', data['open_files'], extra_dimensions=extra_dimensions))
+            metric_data.append(self.metric('Threads', data['thread_count'], extra_dimensions=extra_dimensions))
+        metric_data.append(self.metric('Processes', process_count))
 
         cpu_times = psutil.cpu_times_percent(interval=1, percpu=False)
         try:
@@ -225,8 +257,11 @@ class Debugger(object):
         try:
             slices = int(ceil(len(metric_data) / 20.0))
             for metric_data_slice in [metric_data[i::slices] for i in range(slices)]:
-                response = self.cloudwatch.put_metric_data(Namespace='Search/EC2', MetricData=metric_data_slice)
-                print('Sending statistics, response: %i' % response['ResponseMetadata']['HTTPStatusCode'])
+                if self.dry_run:
+                    print(metric_data_slice)
+                else:
+                    response = self.cloudwatch.put_metric_data(Namespace='Search/EC2', MetricData=metric_data_slice)
+                    print('Sending statistics, response: %i' % response['ResponseMetadata']['HTTPStatusCode'])
             self.first_run = False
         except Exception as e:
             print('ERROR SENDING STATISTICS! :( %s' % e.message)
@@ -241,11 +276,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='EC2 Solr/Zookeeper instance debugging')
     parser.add_argument('-solr-host', metavar='SOLR_CLUSTER_NAME', type=str, required=True, help='SolrCloud cluster DNS name')
     parser.add_argument('-zookeeper-host', metavar='ZOOKEEPER_CLUSTER_NAME', type=str, required=True, help='Zookeeper Exhibitor cluster DNS name')
-    parser.add_argument('--udp', type=bool, required=False, default=False, help='Use UDP ping')
-
+    parser.add_argument('--dimensions', type=str, nargs='*', help='Extra CloudWatch Dimensions. Format: Key=Value')
+    parser.add_argument('--dry-run', type=bool, nargs='?', const=True, default=False, help='Print CloudWatch data to stdout instead')
+    parser.add_argument('--udp', type=bool, nargs='?', const=True, default=False, help='Use UDP ping')
     args = parser.parse_args()
 
-    debugger = Debugger(args.solr_host, args.zookeeper_host, args.udp)
+    debugger = Debugger(args.solr_host, args.zookeeper_host, args.udp, args.dimensions, args.dry_run)
     while True:
         try:
             debugger.probe()
