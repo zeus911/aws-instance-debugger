@@ -48,7 +48,7 @@ class Debugger(object):
                     statuses = urllib2.urlopen('http://%s:8983/solr/admin/collections?action=CLUSTERSTATUS&wt=json' % cmdline_host, timeout=1)
                     for status in json.loads(statuses.read())['cluster'].get('live_nodes', []):
                         expanded_hosts.append(status.split(':')[0])
-                except urllib2.URLError:
+                except urllib2.URLError as e:
                     print('Unable to connect to SolrCloud at %s:8983: %s' % e.message)
                     return []
                 except Exception as e:
