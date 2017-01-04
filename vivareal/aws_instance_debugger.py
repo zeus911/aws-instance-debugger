@@ -34,7 +34,7 @@ class Debugger(object):
         self.update_hosts()
 
     @staticmethod
-    def _expand_solr_hosts(cmdline_hosts):
+    def _expand_solr_hosts(cmdline_hosts, myself):
         expanded_hosts = []
         if cmdline_hosts:
             if isinstance(cmdline_hosts, str):
@@ -47,7 +47,9 @@ class Debugger(object):
                 try:
                     statuses = urllib2.urlopen('http://%s:8983/solr/admin/collections?action=CLUSTERSTATUS&wt=json' % cmdline_host, timeout=1)
                     for status in json.loads(statuses.read())['cluster'].get('live_nodes', []):
-                        expanded_hosts.append(status.split(':')[0])
+                        live_node = status.split(':')[0]
+                        if live_node != myself:
+                            expanded_hosts.append(live_node)
                 except urllib2.URLError as e:
                     print('Unable to connect to SolrCloud at %s:8983: %s' % (cmdline_host, e.message))
                     return []
@@ -98,7 +100,7 @@ class Debugger(object):
             return 'localhost', '127.0.0.1'
 
     def update_hosts(self):
-        self.solrs = self._expand_solr_hosts(self.__solr_hosts)
+        self.solrs = self._expand_solr_hosts(self.__solr_hosts, self.identity[1])
         self.zookeepers = self._expand_zookeeper_hosts(self.__zookeeper_hosts)
 
     def ping_hosts(self, seconds=55):
@@ -112,16 +114,17 @@ class Debugger(object):
                 host_key = 'SolrPing_%s' % solr
                 ping = pyping.ping(solr, count=5, timeout=500, udp=self.use_udp)
                 if host_key not in hosts:
-                    hosts[host_key] = {'avg': 0, 'min': 1000, 'max': 0}
+                    hosts[host_key] = {'count': 0, 'avg': 0, 'min': 1000, 'max': 0}
                 if ping.avg_rtt:
                     hosts[host_key]['avg'] = float(ping.avg_rtt) if float(ping.avg_rtt) > hosts[host_key]['avg'] else hosts[host_key]['avg']
                 if ping.max_rtt:
                     hosts[host_key]['max'] = float(ping.max_rtt) if float(ping.max_rtt) > hosts[host_key]['max'] else hosts[host_key]['max']
                 if ping.min_rtt:
                     hosts[host_key]['min'] = float(ping.min_rtt) if float(ping.min_rtt) < hosts[host_key]['min'] else hosts[host_key]['min']
+                hosts[host_key] += 1
             for zoo in self.zookeepers:
                 host_key = 'ZKPing_%s' % zoo
-                ping = pyping.ping(zoo, count=3, timeout=500, udp=self.use_udp)
+                ping = pyping.ping(zoo, count=5, timeout=500, udp=self.use_udp)
                 if host_key not in hosts:
                     hosts[host_key] = {'avg': 0, 'min': 1000, 'max': 0}
                 if ping.avg_rtt:
@@ -130,8 +133,9 @@ class Debugger(object):
                     hosts[host_key]['max'] = float(ping.max_rtt) if float(ping.max_rtt) > hosts[host_key]['max'] else hosts[host_key]['max']
                 if ping.min_rtt:
                     hosts[host_key]['min'] = float(ping.min_rtt) if float(ping.min_rtt) < hosts[host_key]['min'] else hosts[host_key]['min']
-
+                hosts[host_key] += 1
             print('.', end="")
+            sys.stdout.flush()
 
             if time() - start < seconds and not self.first_run:
                 sleep(0.5)
@@ -140,7 +144,10 @@ class Debugger(object):
         print()
 
         for ping_host, ping_data in hosts.iteritems():
-            metric_data.append(self.metric(ping_host, value=ping_data['avg'], min=ping_data['min'], max=ping_data['max']))
+            if ping_data['min'] == ping_data['max']:
+                metric_data.append(self.metric(ping_host, value=ping_data['avg']))
+            else:
+                metric_data.append(self.metric(ping_host, value=ping_data['avg'], min=ping_data['min'], max=ping_data['max'], count=ping_data['count']))
 
         metric_data.append(self.metric('Load', os.getloadavg()[0]))
         metric_data.append(self.metric('Memory', psutil.virtual_memory().percent))
@@ -148,7 +155,7 @@ class Debugger(object):
 
         return metric_data
 
-    def metric(self, name, value, min=None, max=None):
+    def metric(self, name, value, min=None, max=None, count=1):
         data = {
             'MetricName': name,
             'Dimensions': [
@@ -171,8 +178,8 @@ class Debugger(object):
         if max is not None:
             statistic_values['Maximum'] = float(max)
 
-        if statistic_values:
-            statistic_values['SampleCount'] = 1
+        if statistic_values and min is not None and max is not None and max > min:
+            statistic_values['SampleCount'] = count
             statistic_values['Sum'] = float(value)
             data['StatisticValues'] = statistic_values
             del data['Value']
@@ -224,7 +231,6 @@ class Debugger(object):
             for metric_data_slice in [metric_data[i::slices] for i in range(slices)]:
                 response = self.cloudwatch.put_metric_data(Namespace='Search/EC2', MetricData=metric_data_slice)
                 print('Sending statistics, response: %i' % response['ResponseMetadata']['HTTPStatusCode'])
-            sys.stdout.flush()
             self.first_run = False
         except Exception as e:
             print('ERROR SENDING STATISTICS! :( %s' % e.message)
@@ -249,6 +255,8 @@ if __name__ == '__main__':
             debugger.probe()
         except KeyboardInterrupt:
             print('Exiting...')
+            sys.stdout.flush()
             sys.exit(0)
         except Exception as e:
             print('Error: %s' % e.message)
+        sys.stdout.flush()
