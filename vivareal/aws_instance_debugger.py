@@ -222,7 +222,7 @@ class Debugger(object):
             with process.oneshot():
                 if process.ppid() <= 5:
                     continue
-                process_name = process.name()
+                process_name = '%s (%s)' % (process.name(), process.username())
                 try:
                     if process_name not in processes:
                         processes[process_name] = {
