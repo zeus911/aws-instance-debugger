@@ -11,6 +11,7 @@ import urllib2
 from datetime import datetime
 from math import ceil
 from time import sleep, time
+from solrcloud_monitor import SolrCloud
 
 import boto3
 import psutil
@@ -24,6 +25,7 @@ class Debugger(object):
         self.__solr_hosts = solr_hosts
         self.__zookeeper_hosts = zookeeper_hosts
         self.__dimensions = []
+        self.solrcloud = SolrCloud(solr_hosts)  # fixme
 
         self.dry_run = dry_run
 
@@ -171,15 +173,15 @@ class Debugger(object):
         print()
 
         for ping_host, ping_data in hosts.iteritems():
-            metric_data.append(self.metric(ping_host, value=ping_data['avg'], min=ping_data['min'], max=ping_data['max']))
+            metric_data.append(self.metric(ping_host, value=ping_data['avg'], min=ping_data['min'], max=ping_data['max'], unit='Milliseconds'))
 
-        metric_data.append(self.metric('Load', os.getloadavg()[0]))
-        metric_data.append(self.metric('Memory', psutil.virtual_memory().percent))
-        metric_data.append(self.metric('Swap', psutil.swap_memory().percent))
+        metric_data.append(self.metric('Load', os.getloadavg()[0], unit='Percent'))
+        metric_data.append(self.metric('Memory', psutil.virtual_memory().percent, unit='Percent'))
+        metric_data.append(self.metric('Swap', psutil.swap_memory().percent, unit='Percent'))
 
         return metric_data
 
-    def metric(self, name, value, min=None, max=None, extra_dimensions=[]):
+    def metric(self, name, value, min=None, max=None, extra_dimensions=[], unit=None):
         dimensions = list(extra_dimensions)
         dimensions.extend(list(self._dimensions()))
         data = {
@@ -200,7 +202,8 @@ class Debugger(object):
             statistic_values['Sum'] = float(value)
             data['StatisticValues'] = statistic_values
             del data['Value']
-
+        if unit:  # and self.is_valid_unit(unit):  # fixme
+            data['Unit'] = unit
         return data
 
     def probe(self):
@@ -213,7 +216,7 @@ class Debugger(object):
         metric_data = list()
 
         for partition in psutil.disk_partitions():
-            metric_data.append(self.metric('Disk Usage', psutil.disk_usage(partition.mountpoint).percent, extra_dimensions=[{'Name': 'Partition', 'Value': partition.device}]))
+            metric_data.append(self.metric('Disk Usage', psutil.disk_usage(partition.mountpoint).percent, extra_dimensions=[{'Name': 'Partition', 'Value': partition.device}], unit='Percent'))
 
         process_count = 0
         processes = dict()
@@ -247,12 +250,25 @@ class Debugger(object):
 
         cpu_times = psutil.cpu_times_percent(interval=1, percpu=False)
         try:
-            metric_data.append(self.metric('IOWait', cpu_times.iowait))
-            metric_data.append(self.metric('Steal', cpu_times.steal))
+            metric_data.append(self.metric('IOWait', cpu_times.iowait, unit='Percent'))
+            metric_data.append(self.metric('Steal', cpu_times.steal, unit='Percent'))
         except:
-            metric_data.append(self.metric('Idle', cpu_times.idle))
+            metric_data.append(self.metric('Idle', cpu_times.idle, unit='Percent'))
 
         metric_data.extend(self.ping_hosts(55 - (time() - start)))
+
+        # SolrCloud Core Stats <3
+        for core_name, segment_data in self.solrcloud.core_statistics().iteritems():
+            extra_dimensions = [{'Name': 'Core', 'Value': core_name}]
+            metric_data.append(self.metric('Bytes', segment_data['bytes'], extra_dimensions=extra_dimensions, unit='Bytes'))
+            metric_data.append(self.metric('Documents', segment_data['docs'], extra_dimensions=extra_dimensions))
+            metric_data.append(self.metric('Deleted Docs', segment_data['docs_deleted'], extra_dimensions=extra_dimensions))
+            metric_data.append(self.metric('Fragmentation', segment_data['fragmentation'], extra_dimensions=extra_dimensions, unit='Percent'))
+            metric_data.append(self.metric('Merge Candidates', segment_data['merge_candidates'], extra_dimensions=extra_dimensions))
+            metric_data.append(self.metric('Segments', segment_data['segments'], extra_dimensions=extra_dimensions))
+            metric_data.append(self.metric('Segments Flush', segment_data['segments_flush'], extra_dimensions=extra_dimensions))
+            metric_data.append(self.metric('Segments Merge', segment_data['segments_merge'], extra_dimensions=extra_dimensions))
+            metric_data.append(self.metric('Total Docs', segment_data['docs_total'], extra_dimensions=extra_dimensions))
 
         try:
             slices = int(ceil(len(metric_data) / 20.0))
