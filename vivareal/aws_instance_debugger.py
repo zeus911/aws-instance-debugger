@@ -11,7 +11,7 @@ import urllib2
 from datetime import datetime
 from math import ceil
 from time import sleep, time
-from solrcloud_monitor import SolrCloud
+from vivareal.solrcloud_monitor import SolrCloud
 
 import boto3
 import psutil
