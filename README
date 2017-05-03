@@ -8,7 +8,7 @@ Open source tool that generate a bunch more of CloudWatch metrics for your AWS i
   - [ ] Jenkins
   - [X] [Pypi](https://pypi.python.org/pypi/aws-instance-debugger)
   
-## Configuring project
+## Configuring
 
 You will need to use an Python 2.7 interpreter.
 
