@@ -14,7 +14,9 @@ You will need to use an Python 2.7 interpreter.
 
 The easiest route is to create an Virtualenv with
 
-`make virtualenv`
+```sh
+make virtualenv
+```
 
 This will install all dependencies from `requirements.txt` automagically.
 
@@ -25,21 +27,24 @@ Just import the project and set the python path to the previously created [virtu
 ## How to Run
 
 This tool is a simle CLI. To check if everything is set up correctly, simply run it using the `venv` python:
-
-`./venv/bin/python vivareal/aws_instance_debugger.py`
+```sh
+./venv/bin/python vivareal/aws_instance_debugger.py
+```
 
 **Running into your IDE (debug)**
 
 Just open the module `vivareal/aws_instance_debugger.py` and run it directly from inside the IDE. 
 
 ## How to Test
-
-`make test`
+```sh
+make test
+```
 
 ## How to Deploy
 
 This package should be installed inside the AMI that you need to monitor, using `pip`.
-
-`pip install aws_instance_debugger`
+```sh
+pip install aws_instance_debugger
+```
 
 After that, make this tool run at the AMI boot, using your preferred method. I prefer using [supervisor](http://supervisord.org/).
